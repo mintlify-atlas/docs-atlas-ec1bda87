@@ -1,0 +1,41 @@
+---
+title: "Polymarket Copy Trading Bot: arb and copy trading"
+description: "Learn how the Polymarket Copy Trading Bot automates BTC Up/Down arbitrage and mirrors target wallets on Polygon using Node.js and the CLOB API."
+---
+
+The Polymarket Copy Trading Bot is an open-source Node.js application that trades on Polymarket's prediction markets. It runs on the Polygon blockchain, communicates with Polymarket's CLOB (Central Limit Order Book) API, and requires Node.js 18 or higher. The bot ships with two independent strategies — an arbitrage engine for BTC Up/Down 5-minute markets and a copy-trading mode that mirrors the buy orders of any target wallet — and manages the full trading lifecycle from order posting through on-chain settlement.
+
+## Two strategies
+
+**Arb mode** exploits the complementary-token property of Polymarket's BTC Up/Down 5-minute markets: an Up share and a Down share for the same window always resolve to a combined value of $1. The bot posts a dual-sided limit ladder across configurable price levels on both sides of each market. When the combined best ask for an Up/Down pair falls below the arbitrage threshold (`TARGET_EDGE`), it fires a Fill-or-Kill (FOK) taker order to lock in the guaranteed spread. After enough matched pairs accumulate, the bot calls the on-chain `mergePositions` function to convert them to USDC, eliminating settlement risk.
+
+**Copy trader mode** watches one or more Polymarket proxy wallets and mirrors their buy-side activity. When a target wallet places a buy order, the bot detects it (within the staleness window defined by `COPY_STALE_MS`) and immediately places a matching buy on the same outcome. Trade sizing supports three modes: `FIXED` (always spend a flat USDC amount), `MIRROR` (spend the same amount as the target), or `RATIO` (spend a fixed fraction of the target's order). Configurable spend caps, slippage limits, and an allow/block list of condition IDs give you precise control over what gets copied.
+
+## How it works at a high level
+
+1. **Wallet authentication** — The bot signs an EIP-712 typed-data message with your Polygon EOA private key to prove ownership of the associated Polymarket proxy wallet.
+2. **CLOB API credential derivation** — On every startup the bot derives a fresh set of Polymarket CLOB API credentials (key, secret, passphrase) from the signed authentication payload. No credential storage is required — they are re-derived automatically each time.
+3. **WebSocket order book feed** — The bot subscribes to Polymarket's real-time WebSocket feed to receive live order book updates for the relevant markets, enabling low-latency taker fills and fast copy detection.
+4. **On-chain merging** — When matched Up/Down pairs accumulate above the `MERGE_THRESHOLD_USDC` value, the bot calls `mergePositions` on the Polymarket CTF contract to convert paired positions back to USDC.
+5. **Redemption after resolution** — Once a market resolves, the winning conditional tokens are redeemable for USDC through the standard Polymarket redemption flow.
+
+## Before you begin
+
+<Warning>
+  This bot places **real-money trades** on the Polygon blockchain using your private key. Use a **dedicated wallet** that is separate from your main crypto wallet, and start with very small amounts ($5–$10) until you have verified that your configuration is correct. Blockchain transactions are irreversible.
+</Warning>
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install the bot and place your first trade in under 10 minutes.
+  </Card>
+  <Card title="Wallet setup" icon="wallet" href="/configuration/wallet-setup">
+    Create a dedicated trading wallet, fund it with USDC and MATIC, and connect it to Polymarket.
+  </Card>
+  <Card title="Arb bot" icon="arrows-left-right" href="/modes/arb-bot">
+    How the BTC Up/Down arbitrage strategy works and how to tune its parameters.
+  </Card>
+  <Card title="Copy trader" icon="copy" href="/modes/copy-trader">
+    Mirror any Polymarket wallet's buy orders with flexible FIXED, MIRROR, or RATIO sizing.
+  </Card>
+</CardGroup>

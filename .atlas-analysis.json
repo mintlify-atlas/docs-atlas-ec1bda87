@@ -1,0 +1,76 @@
+{
+  "projectType": "general",
+  "projectName": "Polymarket Copy Trading Bot",
+  "projectDescription": "An automated Node.js trading bot for Polymarket that supports both BTC Up/Down arbitrage and copy-trading modes on the Polygon blockchain.",
+  "theme": "palm",
+  "primaryColor": "#1554f2",
+  "lightColor": "#82a4e1",
+  "darkColor": "#040404",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "pages": [
+          "introduction",
+          "quickstart",
+          "first-run-checklist"
+        ]
+      },
+      {
+        "group": "Configuration",
+        "pages": [
+          "configuration/wallet-setup",
+          "configuration/env-reference"
+        ]
+      },
+      {
+        "group": "Trading Modes",
+        "pages": [
+          "modes/arb-bot",
+          "modes/copy-trader"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/architecture",
+          "reference/trading-rules",
+          "reference/risk-controls",
+          "reference/logging",
+          "reference/glossary"
+        ]
+      },
+      {
+        "group": "Help",
+        "pages": [
+          "troubleshooting",
+          "disclaimer"
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "BTC Up/Down 5-minute market arbitrage with dual-sided limit ladder posting",
+    "Copy-trading mode that mirrors any target Polymarket wallet's buy orders",
+    "Multiple sizing modes: FIXED, MIRROR (1:1), and RATIO (percentage)",
+    "Multi-layered risk controls: per-trade, per-market, hourly, and total spend caps",
+    "Circuit breakers: inventory imbalance halt, combined-ask stop, hourly loss limit",
+    "Automatic CLOB API credential derivation from wallet private key",
+    "Real-time WebSocket order book feed with REST polling fallback",
+    "On-chain position merging and redemption after market resolution",
+    "Dry-run mode for safe copy-trader testing without real orders",
+    "Winston-based dual logging to console (color-coded) and bot.log file"
+  ],
+  "publicApiSurface": [
+    "npm start — launch arb bot (TRADING_MODE=arb)",
+    "npm run copy — launch copy trader (TRADING_MODE=copy)",
+    "npm run dev — arb bot with auto-restart on file changes",
+    "npm run copy:dev — copy trader with auto-restart",
+    "node src/copy/index.js — standalone copy trader entry point",
+    "Trader class (src/trader.js) — per-market arb state machine",
+    "CopyTrader class (src/copy/copyTrader.js) — copy trade execution engine",
+    "PnlTracker class (src/pnl.js) — session P&L and circuit breaker",
+    "ClobClient (src/clob.js) — Polymarket CLOB API wrapper",
+    "ActivityFeed (src/copy/activityFeed.js) — target wallet trade watcher"
+  ]
+}

@@ -1,0 +1,92 @@
+---
+title: "Glossary: Polymarket, Polygon, and trading terms"
+description: "Definitions for prediction market, blockchain, and bot-specific terms used in the Polymarket Copy Trading Bot docs — from CLOB to circuit breakers."
+---
+
+Quick reference for terms specific to Polymarket prediction markets and the bot's operation. If you are new to prediction markets or decentralized finance, start here before reading the other reference pages.
+
+<AccordionGroup>
+  <Accordion title="Polymarket">
+    A decentralized prediction market platform where users trade on real-world event outcomes. Markets resolve to either 0 or 1 ($0 or $1 per share) depending on the outcome. The bot trades exclusively on Polymarket.
+  </Accordion>
+
+  <Accordion title="Polygon">
+    A fast, low-cost EVM-compatible blockchain (Chain ID: 137) where Polymarket's smart contracts are deployed. All on-chain transactions — approvals, merges, and redemptions — are submitted to Polygon. You need a small amount of MATIC to pay gas fees.
+  </Accordion>
+
+  <Accordion title="USDC">
+    USD Coin, a stablecoin pegged to $1. On Polygon, Polymarket uses **USDC.e** (bridged USDC), with contract address `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174`. All P&L figures in the bot are denominated in USDC.
+  </Accordion>
+
+  <Accordion title="MATIC">
+    Polygon's native gas token. You need a few dollars' worth of MATIC in your wallet to pay for on-chain transactions such as approvals, merges, and redemptions. MATIC is not used for trading — only for gas.
+  </Accordion>
+
+  <Accordion title="Private key">
+    A 64-character hex string that proves ownership of an Ethereum/Polygon wallet. The bot requires your private key (via `PRIVATE_KEY` in `.env`) to sign CLOB orders and submit on-chain transactions. **Never share your private key with anyone or commit it to version control.**
+  </Accordion>
+
+  <Accordion title="Proxy wallet">
+    A smart contract that Polymarket deploys for your account to execute trades on your behalf. Your proxy wallet address (`PROXY_WALLET` in `.env`) is different from your EOA address. Orders must be signed with your private key but submitted as if coming from the proxy wallet. Most Polymarket accounts created via MetaMask or Rabby use a proxy wallet (signature type 2).
+  </Accordion>
+
+  <Accordion title="EOA (Externally Owned Account)">
+    A standard Ethereum wallet controlled directly by a private key — for example, a MetaMask or Rabby wallet. Distinct from a proxy wallet (smart contract). The `PRIVATE_KEY` in your `.env` controls an EOA, which in turn controls the proxy wallet.
+  </Accordion>
+
+  <Accordion title="RPC endpoint">
+    A URL that allows software to communicate with the Polygon network — read balances, submit transactions, and query contract state. The default is `https://polygon-rpc.com` (public, rate-limited). For a production bot, set `POLYGON_RPC` to a private endpoint from Alchemy or Infura to avoid rate-limit errors.
+  </Accordion>
+
+  <Accordion title="CLOB (Central Limit Order Book)">
+    Polymarket's on-chain order matching system. Orders are signed off-chain and submitted to the CLOB API, which matches them and settles fills on Polygon. The bot interacts with the CLOB via `src/clob.js`.
+  </Accordion>
+
+  <Accordion title="conditionId">
+    A unique identifier for a Polymarket prediction market. Each 5-minute BTC Up/Down window has its own `conditionId`. Used to scope order cancellations, merges, and redemptions to the correct market.
+  </Accordion>
+
+  <Accordion title="tokenId">
+    An ERC-1155 token ID representing a specific outcome share — for example, the "BTC Up" token or the "BTC Down" token for a given window. Each outcome in a market has its own `tokenId`. The bot tracks `upToken.tokenId` and `downToken.tokenId` separately.
+  </Accordion>
+
+  <Accordion title="FOK (Fill-Or-Kill)">
+    An order type that must be **fully filled immediately** or is **entirely cancelled**. The arb bot uses FOK orders for taker arb to ensure both sides fill at the same time. If either side cannot fill completely, neither position is taken — preventing one-sided directional exposure.
+  </Accordion>
+
+  <Accordion title="IOC (Immediate-Or-Cancel)">
+    An order type that fills **as much as possible immediately**; any unfilled quantity is cancelled rather than resting in the book. The copy trader uses IOC orders (`postIOCBuy`) so that partial fills are accepted but stale unfilled quantity does not linger.
+  </Accordion>
+
+  <Accordion title="Arb / Arbitrage">
+    Profiting from a price discrepancy with no directional risk. In this bot, arbitrage means buying both the Up token and the Down token for a combined price less than $1 — since one of them must pay out $1 at resolution, the trade is theoretically risk-free. The profit is the `edge` = `1 - (upAsk + downAsk)`.
+  </Accordion>
+
+  <Accordion title="Ladder">
+    A set of limit buy orders spread across multiple price levels. The bot posts a ladder on both the Up and Down tokens at window open (Rule 2), with orders at 23 price levels from 0.02 to 0.98. The ladder captures fills from other traders moving the market without requiring real-time monitoring.
+  </Accordion>
+
+  <Accordion title="Merge">
+    Combining matched Up+Down token pairs back into USDC via the on-chain `ConditionalTokens` contract. For every 1 Up token and 1 Down token you hold, you can merge them to receive $1 of USDC, regardless of which side eventually wins. Merging captures arb profit immediately without waiting for resolution.
+  </Accordion>
+
+  <Accordion title="Redeem">
+    Claiming a USDC payout after a market resolves, by burning the winning-side tokens. If BTC goes up, the Up tokens pay out $1 each; Down tokens pay $0. The bot calls `redeemPositions(conditionId)` on-chain after the oracle resolves the market.
+  </Accordion>
+
+  <Accordion title="Resolution">
+    When a market closes and an oracle determines the winning outcome. For BTC Up/Down markets, resolution happens approximately 5 minutes after the window closes (the oracle checks the BTC price at the end of the window). The bot polls the Gamma API for resolution status before redeeming.
+  </Accordion>
+
+  <Accordion title="Edge">
+    The profit margin on an arb trade, defined as `1 - (upAsk + downAsk)`. An edge of 0.02 means you pay $0.98 for tokens that will collectively pay out $1 — a 2% return. The bot only fires taker arb when `edge >= TARGET_EDGE` (default 0.02).
+  </Accordion>
+
+  <Accordion title="Dry run">
+    Test mode enabled by setting `COPY_DRY_RUN=true` in `.env`. In dry run mode, the copy trader logs what it would do — including which trades it would copy, at what size, and at what price — without placing any real orders. Use this to verify configuration before committing funds.
+  </Accordion>
+
+  <Accordion title="Circuit breaker">
+    An automatic safety mechanism that halts or throttles trading when a risk limit is exceeded. The bot has three arb-bot circuit breakers (inventory imbalance, combined-ask stop, hourly loss limit) and four copy trader spend caps that act as soft circuit breakers. See the [risk controls reference](/reference/risk-controls) for details.
+  </Accordion>
+</AccordionGroup>

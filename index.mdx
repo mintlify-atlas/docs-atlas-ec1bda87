@@ -1,133 +1,53 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
-icon: 'star'
+title: "Polymarket Copy Trading Bot documentation"
+description: "An automated Node.js trading bot for Polymarket that runs BTC Up/Down arbitrage and mirrors target wallet trades on the Polygon blockchain."
 ---
 
-## Setting up
+The Polymarket Copy Trading Bot is an open-source Node.js bot that trades on Polymarket's prediction markets. It ships with two independent strategies: a BTC Up/Down 5-minute arbitrage engine that exploits complementary-token price gaps, and a dedicated copy-trading mode that mirrors the buy orders of any target wallet you choose to follow.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install the bot and run your first trade in under 10 minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="First-run checklist" icon="circle-check" href="/first-run-checklist">
+    A step-by-step checklist to safely configure and launch the bot.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Arb bot" icon="chart-line" href="/modes/arb-bot">
+    How the BTC Up/Down arbitrage strategy works and how to tune it.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Copy trader" icon="copy" href="/modes/copy-trader">
+    Mirror any Polymarket wallet's buy orders with flexible sizing modes.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Two trading modes
 
-Everything you need to create world-class documentation.
+<CardGroup cols={2}>
+  <Card title="BTC Up/Down arb" icon="arrows-left-right" href="/modes/arb-bot">
+    Posts a dual-sided limit ladder on every 5-minute BTC market and takes aggressive fills when the combined ask falls below the arb threshold.
+  </Card>
+  <Card title="Wallet copy trading" icon="user-group" href="/modes/copy-trader">
+    Watches one or more target wallets and instantly mirrors their buy orders with FIXED, MIRROR, or RATIO sizing — all with configurable spend caps.
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Configure and deploy
 
-## Make your content agent ready
-
-Make your docs work for humans and AI agents alike.
-
-<Columns cols={2}>
-  <Card
-    title="Prompt component"
-    icon="robot"
-    href="/agent-ready/prompt"
-  >
-    Embed shareable AI prompts readers can copy or open in Cursor.
+<CardGroup cols={2}>
+  <Card title="Wallet setup" icon="wallet" href="/configuration/wallet-setup">
+    How to create a dedicated trading wallet, fund it with USDC and MATIC, and connect it to Polymarket.
   </Card>
-  <Card
-    title="Visibility"
-    icon="eye"
-    href="/agent-ready/visibility"
-  >
-    Show different content to humans and agents reading your docs.
+  <Card title="Environment reference" icon="sliders" href="/configuration/env-reference">
+    Every `.env` variable explained — risk parameters, sizing modes, and safety guardrails.
   </Card>
-  <Card
-    title="Contextual menu"
-    icon="bolt"
-    href="/agent-ready/contextual"
-  >
-    Give readers one-click access to Claude, ChatGPT, Cursor, and more.
+  <Card title="Risk controls" icon="shield-halved" href="/reference/risk-controls">
+    Circuit breakers, spend caps, and per-market limits that keep losses bounded.
   </Card>
-  <Card
-    title="AI coding tools"
-    icon="wand-magic-sparkles"
-    href="/ai-tools/claude-code"
-  >
-    Set up Claude Code, Cursor, or Windsurf with Mintlify's skill.
+  <Card title="Troubleshooting" icon="wrench" href="/troubleshooting">
+    Solutions to common startup, authentication, and order-execution errors.
   </Card>
-</Columns>
+</CardGroup>
 
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Warning>
+  This bot places **real-money trades** on the blockchain using your private key. Start with a dedicated wallet and very small amounts ($5–$10) until you are confident the configuration is correct. Never use your main crypto wallet.
+</Warning>

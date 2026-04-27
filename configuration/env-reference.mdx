@@ -1,0 +1,212 @@
+---
+title: "Environment variable reference for the trading bot"
+description: "Complete reference for every .env variable in the Polymarket Copy Trading Bot — wallet settings, risk parameters, ladder config, and copy trader options."
+---
+
+All configuration lives in a `.env` file at the project root. Copy `.env.example` to `.env` and fill in your values before running the bot. On startup, `src/config.js` reads the file, validates that required fields are present, and exports typed constants used across the codebase. The bot will throw an error and refuse to start if any required variable is missing.
+
+## Trading mode
+
+<ParamField path="TRADING_MODE" type="string" default="arb">
+  Selects which strategy `npm start` launches.
+
+  - `arb` — 9-rule BTC Up/Down automated arbitrage strategy (default)
+  - `copy` — BUY-only copy trader that mirrors the wallets listed in `COPY_TARGETS`
+
+  You can also run each mode directly with its dedicated script:
+
+  ```bash
+  npm run arb    # start the arb bot
+  npm run copy   # start the copy trader
+  ```
+</ParamField>
+
+## Required wallet settings
+
+<ParamField path="PRIVATE_KEY" type="string" required>
+  Private key of your dedicated Polygon trading wallet. This key controls the Polymarket proxy wallet and signs all orders. Must be prefixed with `0x`.
+
+  See [Wallet setup](/configuration/wallet-setup) for instructions on creating a dedicated wallet and exporting the private key from MetaMask.
+</ParamField>
+
+<ParamField path="PROXY_WALLET" type="string" required>
+  Your Polymarket proxy wallet address (starts with `0x`). This is the smart contract that Polymarket deploys for your account — it is **not** your MetaMask EOA address.
+
+  Find this address in your Polymarket account settings after connecting your wallet at polymarket.com.
+</ParamField>
+
+<ParamField path="POLYGON_RPC" type="string" default="https://polygon-rpc.com">
+  Polygon Mainnet RPC endpoint URL. The default public endpoint works for getting started but is rate-limited. For reliable bot operation, use a private endpoint from [Alchemy](https://alchemy.com) or [Infura](https://infura.io).
+
+  ```
+  https://polygon-mainnet.g.alchemy.com/v2/YOUR_API_KEY
+  ```
+</ParamField>
+
+<ParamField path="SIGNATURE_TYPE" type="number" default="2">
+  EIP-712 signature type for order signing. Values:
+
+  - `0` — EOA (standalone wallet; the signer is the funder directly)
+  - `1` — POLY_PROXY (Magic Link / email login)
+  - `2` — GNOSIS_SAFE (MetaMask / Rabby browser wallet proxy — most common)
+
+  Leave at `2` unless your Polymarket account uses a different auth method.
+</ParamField>
+
+## CLOB API credentials (auto-generated)
+
+<ParamField path="POLY_API_KEY" type="string">
+  Polymarket CLOB API key. Leave blank on first run.
+</ParamField>
+
+<ParamField path="POLY_API_SECRET" type="string">
+  Polymarket CLOB API secret. Leave blank on first run.
+</ParamField>
+
+<ParamField path="POLY_API_PASSPHRASE" type="string">
+  Polymarket CLOB API passphrase. Leave blank on first run.
+</ParamField>
+
+<Note>
+  On first run, the bot automatically derives all three CLOB credentials from your `PRIVATE_KEY` using Polymarket's EIP-712 auth flow and stores them in your `.env`. Do not fill these in manually unless you have been given them directly by Polymarket.
+</Note>
+
+## Arb bot risk parameters
+
+<ParamField path="MAX_SPEND_PER_MARKET" type="number" default="400">
+  Maximum USDC to spend on the buy side in a single 5-minute BTC Up/Down market. Once this limit is reached the bot stops placing new buy orders for that market window.
+</ParamField>
+
+<ParamField path="MAX_INVENTORY_IMBALANCE_USDC" type="number" default="200">
+  Halts buys on the over-held side when the absolute difference between Up shares and Down shares (in USDC equivalent) exceeds this value. Prevents the bot from accumulating a heavily skewed directional position.
+</ParamField>
+
+<ParamField path="TARGET_EDGE" type="number" default="0.02">
+  Minimum arbitrage profit margin required before firing a taker buy (Rule 3). A value of `0.02` means the bot requires at least 2 cents of net profit per dollar of paired position after gas costs.
+</ParamField>
+
+<ParamField path="MERGE_THRESHOLD_USDC" type="number" default="15">
+  Minimum matched pair value (in USDC) required before calling `mergePositions` to redeem a complementary pair back to USDC (Rule 4). Keep this value at or above `10` to amortize gas costs across meaningful position sizes.
+</ParamField>
+
+<ParamField path="MAX_TAKER_FILL_USDC" type="number" default="100">
+  Maximum size per individual taker fill, in USDC. Limits market impact on any single order.
+</ParamField>
+
+<ParamField path="COMBINED_ASK_STOP" type="number" default="1.02">
+  Circuit breaker threshold. If the sum of the best ask on Up and the best ask on Down exceeds this value, the bot pulls all open orders. A value of `1.02` means the combined ask must stay at or below $1.02 for orders to remain active.
+</ParamField>
+
+<ParamField path="MAX_LOSS_PER_HOUR_USDC" type="number" default="300">
+  Halts the bot if cumulative realized losses over the past rolling hour exceed this amount in USDC. Acts as an emergency stop to prevent runaway losses during adverse market conditions.
+</ParamField>
+
+## Ladder parameters
+
+<ParamField path="LADDER_LEVELS" type="string" default="0.02,0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.48,0.50,0.52,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95,0.98">
+  Comma-separated list of price points (between 0 and 1) at which the bot places limit orders for both the Up and Down sides. Each value represents a round-cent price level. Modify this list to concentrate liquidity at specific price bands.
+</ParamField>
+
+<ParamField path="LADDER_SIZE_PER_LEVEL_USDC" type="number" default="20">
+  USDC to allocate per ladder level per side. With the default 23 levels and both Up and Down sides, this results in up to 920 USDC in open limit orders at any time (subject to other risk limits).
+</ParamField>
+
+## Integrated copy watcher (alongside arb bot)
+
+These variables enable the lightweight copy watcher that runs inside the arb bot process when `TRADING_MODE=arb`. Set `TARGET_WALLET` to activate it alongside `npm start`.
+
+<ParamField path="TARGET_WALLET" type="string">
+  Single Polymarket proxy wallet address to mirror when running the integrated copy watcher alongside the arb bot. Leave blank to disable the integrated watcher.
+
+  Unlike the standalone copy trader (`COPY_TARGETS`), this mode uses position-delta tracking rather than activity-feed polling.
+</ParamField>
+
+<ParamField path="COPY_TRADE_BUY_PERCENT" type="number" default="100">
+  Percentage of the target wallet's detected buy amount to mirror, when using the integrated copy watcher. `100` means spend the same USDC as the target; `50` means spend 50% of their amount.
+</ParamField>
+
+<ParamField path="COPY_TRADE_POLL_MS" type="number" default="2000">
+  Polling interval for the integrated copy watcher, in milliseconds. Lower values increase responsiveness but use more RPC quota.
+</ParamField>
+
+## Standalone copy trader settings
+
+<ParamField path="COPY_TARGETS" type="string">
+  Comma-separated list of Polymarket proxy wallet addresses to mirror. The bot polls each address at the interval defined by `COPY_POLL_MS` and places a matching BUY order when it detects a new trade.
+
+  ```
+  COPY_TARGETS=0xabc...123,0xdef...456
+  ```
+</ParamField>
+
+<ParamField path="COPY_SIZE_MODE" type="string" default="FIXED">
+  Determines how the bot sizes each copied trade. Three modes are available:
+
+  - `FIXED` — always spend exactly `COPY_FIXED_USDC` per copied trade
+  - `MIRROR` — spend the same USDC amount the target wallet spent
+  - `RATIO` — spend `COPY_RATIO` × the target's USDC amount
+</ParamField>
+
+<ParamField path="COPY_FIXED_USDC" type="number" default="10">
+  USDC amount to spend per copied trade when `COPY_SIZE_MODE=FIXED`.
+</ParamField>
+
+<ParamField path="COPY_RATIO" type="number" default="0.10">
+  Multiplier applied to the target's trade size when `COPY_SIZE_MODE=RATIO`. A value of `0.10` means the bot spends 10% of what the target spent.
+</ParamField>
+
+<ParamField path="COPY_MAX_USDC_PER_TRADE" type="number" default="50">
+  Hard cap on USDC spent per single copied trade, regardless of sizing mode. Applies after `COPY_FIXED_USDC`, `MIRROR`, or `RATIO` sizing is calculated.
+</ParamField>
+
+<ParamField path="COPY_MAX_USDC_PER_MARKET" type="number" default="200">
+  Maximum cumulative USDC the bot will spend on any single market (identified by `conditionId`). Prevents over-concentration in one outcome.
+</ParamField>
+
+<ParamField path="COPY_MAX_USDC_PER_HOUR" type="number" default="500">
+  Rolling hourly USDC spend cap across all copied trades. Resets on a sliding 60-minute window.
+</ParamField>
+
+<ParamField path="COPY_MAX_USDC_TOTAL" type="number" default="2000">
+  Total USDC spend cap for the entire bot session. Once reached, the bot stops placing new copy orders until restarted.
+</ParamField>
+
+<ParamField path="COPY_MAX_SLIPPAGE" type="number" default="0.03">
+  Maximum acceptable price difference between the target's fill price and the current best ask. If the market has moved more than this amount since the target's trade was detected, the bot skips the copy. A value of `0.03` allows up to 3 cents of slippage.
+</ParamField>
+
+<ParamField path="COPY_MAX_PRICE" type="number" default="0.97">
+  The bot will not copy any trade priced above this value. Avoids buying near-certain outcomes at unfavorable prices.
+</ParamField>
+
+<ParamField path="COPY_MIN_PRICE" type="number" default="0.02">
+  The bot will not copy any trade priced below this value. Avoids buying near-zero probability positions.
+</ParamField>
+
+<ParamField path="COPY_STALE_MS" type="number" default="8000">
+  Trades older than this duration (in milliseconds) at detection time are ignored. Prevents the bot from chasing signals that are too stale to act on profitably. Default is 8 seconds.
+</ParamField>
+
+<ParamField path="COPY_POLL_MS" type="number" default="250">
+  Polling interval per target wallet in milliseconds. At the default of `250` ms the bot makes approximately 4 requests per second per tracked wallet. Lower values increase responsiveness but consume more API quota.
+</ParamField>
+
+<ParamField path="COPY_ALLOWED_CONDITIONS" type="string">
+  Optional comma-separated allowlist of `conditionId` values (0x-prefixed). When set, the bot only copies trades in markets whose `conditionId` appears in this list. Leave empty to copy trades in any market the target trades.
+</ParamField>
+
+<ParamField path="COPY_BLOCKED_CONDITIONS" type="string">
+  Optional comma-separated blocklist of `conditionId` values (0x-prefixed). Trades in matching markets are skipped even if the target places them.
+</ParamField>
+
+<ParamField path="COPY_DRY_RUN" type="boolean" default="false">
+  When set to `true`, the bot logs all copy decisions and calculated order sizes without placing any real orders. Use this to verify configuration and observe behavior before committing funds.
+</ParamField>
+
+## Logging
+
+<ParamField path="LOG_LEVEL" type="string" default="info">
+  Winston log level. Controls the verbosity of console and file output. From least to most verbose: `error`, `warn`, `info`, `debug`.
+
+  Set to `debug` to see detailed order lifecycle events, RPC calls, and polling results during development or troubleshooting.
+</ParamField>

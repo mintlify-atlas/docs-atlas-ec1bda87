@@ -1,0 +1,59 @@
+---
+title: "Risk disclosure and disclaimer for the trading bot"
+description: "Financial, execution, smart contract, and operational risks of the Polymarket Copy Trading Bot — read before running the bot with real funds."
+---
+
+This software is provided for research and educational purposes for experienced traders. It is not a consumer product and makes no promises about profitability or reliability. Before running the bot with real funds, read this page in full.
+
+## Financial risk
+
+<Warning>
+  This bot places real money trades on the blockchain. You can lose some or all of the funds in your trading wallet.
+</Warning>
+
+Real-money trading involves several categories of risk:
+
+- **Market risk.** Prediction markets are highly speculative. Prices can move against your position rapidly and without warning.
+- **Execution risk.** Orders may fill at worse prices than expected, partially fill, or fail entirely due to network conditions or order book changes.
+- **Smart contract risk.** The bot interacts with on-chain contracts. Bugs in those contracts — or in the bot's interaction with them — can result in lost funds.
+- **Operational risk.** Misconfiguration, crashes, or infrastructure outages can cause the bot to behave in ways you do not intend.
+
+This bot is not guaranteed to be profitable. Past performance shown in screenshots in the README is not indicative of future results. Any edge the strategy exploits may narrow or disappear as market conditions change.
+
+## Your responsibility
+
+You are fully responsible for how you configure and run this software. There is no managed service, no support team, and no mechanism to recover lost funds.
+
+Practical steps to reduce your exposure:
+
+- Use a **dedicated wallet** funded only with what you can afford to lose entirely. Never use your main crypto wallet or a wallet that holds other assets.
+- Keep your **private key secure**. Anyone who has access to `PRIVATE_KEY` can drain your wallet completely. Do not paste it into chat apps, cloud notes, or version control.
+- **Start with very small amounts** — $10 to $20 is enough to verify the bot is working correctly. Scale up only after multiple successful sessions.
+- Review your `.env` settings carefully before each session, especially spend caps (`MAX_SPEND_PER_MARKET`, `COPY_MAX_USDC_PER_TRADE`, `MAX_LOSS_PER_HOUR_USDC`).
+
+## No financial advice
+
+This software does not constitute financial advice. Nothing in this repository, the README, or any associated documentation should be interpreted as a recommendation to trade or invest.
+
+This project is not affiliated with, endorsed by, or connected to Polymarket in any way. Polymarket is an independent platform; references to it in this codebase are purely descriptive.
+
+The authors provide no warranty of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, or non-infringement. The software is provided "as is".
+
+## Smart contract and blockchain risk
+
+<Info>
+  On-chain transactions are irreversible. There is no undo, no chargeback, and no recourse once a transaction is confirmed on Polygon.
+</Info>
+
+Specific risks include:
+
+- **Smart contract bugs.** Contracts on Polymarket or Polygon may contain undiscovered vulnerabilities. An exploit could affect your funds even if the bot is configured correctly.
+- **Oracle failures.** Polymarket markets resolve based on external data sources. If an oracle reports incorrect data, a market may resolve in an unexpected direction.
+- **Network congestion.** High traffic on the Polygon network can delay or fail transactions, causing the bot to miss fills or submit duplicate orders.
+- **Polygon network issues.** The Polygon network may experience downtime, chain reorganizations, or other issues that are entirely outside the bot's control. These events can result in lost funds or corrupted state.
+
+---
+
+<Note>
+  By running this software, you acknowledge that you have read and understood these risks.
+</Note>

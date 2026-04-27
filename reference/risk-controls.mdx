@@ -1,0 +1,87 @@
+---
+title: "Risk controls, circuit breakers, and spend caps"
+description: "Every spend cap, circuit breaker, and quality filter in the Polymarket Copy Trading Bot — arb bot and copy trader risk controls with default values."
+---
+
+The bot has multiple independent layers of risk control. Some halt trading immediately when a limit is hit; others throttle position sizing or suppress buying on one side. The layers are separate — an arb circuit breaker does not affect copy trading, and vice versa.
+
+## Arb bot circuit breakers
+
+<AccordionGroup>
+  <Accordion title="Inventory imbalance (MAX_INVENTORY_IMBALANCE_USDC)">
+    **Default: 200 USDC**
+
+    Tracks the absolute difference between `balanceUp` and `balanceDown` in share-value terms. If the imbalance exceeds the limit, the bot suppresses buying on the over-held side to avoid compounding the skew.
+
+    If the imbalance reaches **2×** the limit (default 400), the `halted` flag is set and trading stops entirely for that market. The bot logs a `RULE-8 inventory imbalance circuit breaker` warning each time the threshold is crossed.
+
+    Set `MAX_INVENTORY_IMBALANCE_USDC` in your `.env` to adjust.
+  </Accordion>
+
+  <Accordion title="Combined-ask stop (COMBINED_ASK_STOP)">
+    **Default: 1.02**
+
+    If the best combined ask (`upAsk.price + downAsk.price`) exceeds this value, the market is overpriced relative to the $1 payout — buying both sides would guarantee a loss. When triggered, `halted` is set, the arb loop exits immediately, and the bot moves to cancellation.
+
+    This protects against brief price spikes or market microstructure anomalies that could result in guaranteed losses on taker arb.
+  </Accordion>
+
+  <Accordion title="Hourly loss limit (MAX_LOSS_PER_HOUR_USDC)">
+    **Default: 300 USDC**
+
+    `PnlTracker` maintains a rolling array of settled-market P&L events. At the start of each main loop iteration, `rollingHourlyLoss()` sums all negative P&L events from the last 60 minutes. If that total exceeds `MAX_LOSS_PER_HOUR_USDC`, the entire session ends — no new markets are discovered and the bot shuts down cleanly after all in-flight tasks complete.
+
+    This is the broadest breaker. It stops the session regardless of which market caused the loss.
+  </Accordion>
+</AccordionGroup>
+
+## Arb bot spend controls
+
+These caps control the maximum exposure per trade or per market, independent of the circuit breakers above.
+
+| Env var | Default | Description |
+|---|---|---|
+| `MAX_SPEND_PER_MARKET` | 400 | Total USDC the bot will spend across all orders in a single 5-minute window |
+| `MAX_TAKER_FILL_USDC` | 100 | Maximum USDC committed in a single FOK taker arb fill (both legs combined) |
+| `LADDER_SIZE_PER_LEVEL_USDC` | 20 | USDC value posted at each ladder price level; controls total ladder exposure |
+
+## Copy trader spend caps
+
+The copy trader enforces four independent spend caps. All four are checked before every order, and the computed size is clamped to whichever cap is most restrictive.
+
+| Env var | Default | Scope | Description |
+|---|---|---|---|
+| `COPY_MAX_USDC_PER_TRADE` | 50 | Single order | Maximum USDC on any one copy trade |
+| `COPY_MAX_USDC_PER_MARKET` | 200 | Per `conditionId` | Maximum total USDC spent copying a single market |
+| `COPY_MAX_USDC_PER_HOUR` | 500 | Rolling 60-minute window | Maximum USDC spent on copy trades in any 1-hour period |
+| `COPY_MAX_USDC_TOTAL` | 2000 | Session lifetime | Maximum total USDC spent across all copy trades this session |
+
+When any cap is reached, subsequent signals for that scope are silently skipped (logged at `debug` level with the rejection reason).
+
+## Copy trader quality filters
+
+Before sizing and caps are applied, each incoming signal goes through a set of quality filters that reject low-confidence or stale trades with no I/O overhead.
+
+| Filter | Env var | Default | Behavior |
+|---|---|---|---|
+| Staleness | `COPY_STALE_MS` | 8000 ms | Signals older than this are dropped — the price may have moved |
+| Minimum price | `COPY_MIN_PRICE` | 0.02 | Rejects near-zero-price tokens (extreme outcome probabilities) |
+| Maximum price | `COPY_MAX_PRICE` | 0.97 | Rejects near-certainty tokens where upside is minimal |
+| Slippage | `COPY_MAX_SLIPPAGE` | 0.03 | The IOC buy price is set at `target.price + COPY_MAX_SLIPPAGE`; if the market has moved beyond that, the order will not fill |
+| Allow list | `COPY_ALLOWED_CONDITIONS` | _(empty)_ | If set, only copy trades in these `conditionId`s |
+| Block list | `COPY_BLOCKED_CONDITIONS` | _(empty)_ | Trades in these `conditionId`s are always rejected |
+
+## Recommended settings for beginners
+
+<Tip>
+  Start with very conservative limits and `COPY_DRY_RUN=true` to observe what the bot would do before committing real funds. Increase limits gradually once you understand the bot's behavior in live markets.
+</Tip>
+
+| Env var | Conservative starting value | Notes |
+|---|---|---|
+| `MAX_SPEND_PER_MARKET` | 5 | Limits arb exposure to $5 per 5-minute window |
+| `LADDER_SIZE_PER_LEVEL_USDC` | 1 | Posts $1 at each ladder level instead of the $20 default |
+| `MAX_LOSS_PER_HOUR_USDC` | 10 | Session ends after $10 of rolling hourly losses |
+| `COPY_FIXED_USDC` | 2 | Each copy trade is a flat $2 order |
+| `COPY_MAX_USDC_PER_HOUR` | 20 | Copy trading cannot exceed $20/hour |
+| `COPY_DRY_RUN` | `true` | Logs what would happen without placing real orders |

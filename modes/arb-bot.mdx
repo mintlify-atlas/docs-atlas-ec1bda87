@@ -1,0 +1,124 @@
+---
+title: "BTC Up/Down arb bot: how the strategy works"
+description: "How the Polymarket arb bot exploits complementary-token pricing gaps on 5-minute BTC Up/Down markets using dual-sided ladder orders and FOK taker fills."
+---
+
+The arb bot posts dual-sided limit ladders on Polymarket's 5-minute BTC Up/Down markets and takes aggressive fills whenever the combined ask falls below the arb threshold. It runs the full market lifecycle autonomously — from discovery through oracle redemption — and handles concurrent markets so capital is never sitting idle.
+
+## The arbitrage opportunity
+
+Every Up/Down pair on Polymarket resolves to exactly $1 combined: one side pays $1 per share, the other pays $0. Because the two outcomes are complementary, buying both tokens for a combined cost below $1 locks in a risk-free profit equal to the difference.
+
+The bot watches for:
+
+```
+Up ask + Down ask < (1 - TARGET_EDGE)
+```
+
+When that condition is true, it fires FOK buy orders on both legs simultaneously. The edge is the guaranteed profit per share pair after the market resolves.
+
+**Example:** Up ask `0.47` + Down ask `0.51` = `0.98` combined. With `TARGET_EDGE=0.02`, the threshold is `0.98`. The combined ask exactly meets the threshold and the bot fires — capturing `0.02` per pair ($0.02 on every $0.98 spent).
+
+## Market lifecycle (9 trading rules)
+
+<Steps>
+  <Step title="Market discovery">
+    The main loop queries the Polymarket Gamma API roughly 30 seconds before a
+    new 5-minute BTC Up/Down market opens. It constructs a `Trader` instance and
+    waits for the window open timestamp (Rule 0 / Rule 1).
+  </Step>
+  <Step title="Ladder posting (Rule 2)">
+    At window open, the bot posts buy-side limit orders at every price level in
+    `LADDER_LEVELS` on **both** the Up token and the Down token simultaneously.
+    Each level gets `LADDER_SIZE_PER_LEVEL_USDC` of buying power per side.
+    All orders are fired concurrently via `Promise.allSettled`.
+  </Step>
+  <Step title="Arb loop (Rule 3)">
+    A WebSocket book feed streams real-time best asks for both tokens. On every
+    tick, the bot checks whether `upAsk + downAsk < (1 - TARGET_EDGE)`. When the
+    condition is met, it calculates the maximum fill size (bounded by available
+    liquidity, `MAX_TAKER_FILL_USDC`, and the remaining per-market budget) and
+    fires FOK buy orders on both legs at the same time.
+  </Step>
+  <Step title="Position merging (Rule 4)">
+    Matched Up+Down pairs are merged back to USDC via an on-chain
+    `mergePositions` call whenever the held balance of matched pairs reaches
+    `MERGE_THRESHOLD_USDC`. Merging is skipped if a merge is already in flight
+    to avoid concurrent on-chain calls.
+  </Step>
+  <Step title="Window close (Rule 6)">
+    At `t = 300s` (the end of the 5-minute window) the bot cancels every open
+    order for the market via `cancelMarket`, then performs a final forced merge
+    of any remaining matched pairs.
+  </Step>
+  <Step title="Oracle resolution (Rule 7)">
+    After the window closes, the bot enters the `RESOLVING` phase. It waits
+    `REDEEM_DELAY_AFTER_CLOSE` seconds (approximately 320s), then polls the
+    Gamma API until the market is marked resolved. Once resolved, it calls
+    `redeemPositions` on-chain to claim the winning token payout.
+  </Step>
+  <Step title="Circuit breakers (Rule 8)">
+    Three conditions can halt trading mid-market:
+
+    - **Inventory imbalance** — if `|Up shares − Down shares|` exceeds
+      `MAX_INVENTORY_IMBALANCE`, the bot skews or stops buys on the over-held
+      side. At `2×` the threshold it halts entirely.
+    - **Combined-ask stop** — if `upAsk + downAsk > COMBINED_ASK_STOP`, the bot
+      stops taker fills (the spread has widened beyond safe territory).
+    - **Hourly loss limit** — if realized losses in the rolling 60-minute window
+      exceed `MAX_LOSS_PER_HOUR_USDC`, the bot halts and waits for the next
+      hour.
+  </Step>
+</Steps>
+
+## Running the arb bot
+
+<CodeGroup>
+
+```bash Production
+npm start
+# or explicitly:
+npm run arb
+```
+
+```bash Development (auto-restart)
+npm run arb:dev
+```
+
+</CodeGroup>
+
+`arb:dev` uses Node's `--watch` flag and restarts automatically on file changes. Use it during configuration tuning; use `npm start` (or `npm run arb`) in production.
+
+## Key configuration
+
+The following variables in `.env` control arb bot behavior. See the full reference at `/configuration/env-reference`.
+
+| Variable | Default | Description |
+|---|---|---|
+| `TARGET_EDGE` | `0.02` | Minimum arb edge (in dollars per pair) before firing a taker fill. |
+| `MAX_SPEND_PER_MARKET` | `400` | Hard USDC cap for total buy-side spend in a single 5-minute market. |
+| `LADDER_LEVELS` | 23 price points | Comma-separated cent prices where resting limit orders are posted. |
+| `LADDER_SIZE_PER_LEVEL_USDC` | `20` | USDC allocated per ladder level per side (Up and Down each get this amount). |
+| `MAX_LOSS_PER_HOUR_USDC` | `300` | Rolling 60-minute realized loss limit before the bot halts. |
+
+<Tip>
+  When testing for the first time, set `MAX_SPEND_PER_MARKET=5` and
+  `LADDER_SIZE_PER_LEVEL_USDC=1` so real exposure is minimal while you verify
+  the bot is connecting and posting orders correctly.
+</Tip>
+
+## Concurrent market handling
+
+5-minute markets open back-to-back. As one market's `Trader` enters the `RESOLVING` phase (waiting ~320s for the oracle after the 5-minute window closes), the main loop detects the next upcoming market and spawns a new `Trader` instance for it.
+
+Both `Trader` instances run concurrently in the same process. The resolve phase is entirely async — it does not block new market discovery or ladder posting. In practice, you will typically have one `Trader` actively trading a live market while a previous `Trader` waits for oracle resolution in the background.
+
+<Warning>
+  FOK (Fill-Or-Kill) orders are fired on both legs simultaneously. If one leg
+  fills but the other is rejected (e.g., liquidity disappears in the
+  milliseconds between the two REST calls), you are left with a directional
+  position on a single side. The bot logs this as a partial-arb failure, syncs
+  on-chain balances to correct its internal accounting, and resumes the arb
+  loop — but the directional exposure remains until oracle resolution. This is a
+  known risk of two-legged taker strategies.
+</Warning>

@@ -1,0 +1,103 @@
+---
+title: "First-run safety checklist before going live"
+description: "Complete this checklist before going live — wallet setup, .env configuration, copy trader dry-run, and what to review after your first session."
+---
+
+Blockchain transactions are irreversible. Unlike a broken web app you can roll back, a misconfigured bot can place real orders with real money the moment it connects to the network. Working through this checklist before your first live run takes less than five minutes and significantly reduces the chance of an expensive mistake.
+
+## Wallet and funds
+
+<Check>Created a separate, dedicated wallet for bot trading — not your main wallet</Check>
+
+<Note>
+  Use a fresh wallet that you control solely for this bot. If your private key is ever compromised, only the funds in that wallet are at risk. Never reuse a wallet that holds other assets.
+</Note>
+
+<Check>Added $10–$20 USDC on Polygon to the trading wallet</Check>
+
+<Note>
+  A small starting balance is enough to verify the bot is working correctly. You can add more funds after confirming correct operation. Bridge USDC from Ethereum to Polygon using the [Polygon Bridge](https://portal.polygon.technology) or purchase directly on Polygon via an exchange.
+</Note>
+
+<Check>Added a few dollars of MATIC to the trading wallet for gas fees</Check>
+
+<Note>
+  Polygon gas fees are very low, but the wallet needs some MATIC to pay them. $1–$2 worth of MATIC is sufficient for many hours of operation.
+</Note>
+
+<Check>Located your Polymarket proxy wallet address from polymarket.com account settings</Check>
+
+<Note>
+  Your proxy wallet address is different from your EOA (externally owned account) address. Log in to polymarket.com, open your account settings, and copy the proxy wallet address shown there. This is what goes in `PROXY_WALLET`.
+</Note>
+
+## Configuration
+
+<Check>Filled in `PRIVATE_KEY` with the private key of the dedicated trading wallet only</Check>
+
+<Warning>
+  Never put your main wallet's private key here. The `PRIVATE_KEY` value grants full spending authority over the associated wallet. Use only the dedicated trading wallet you created for this bot.
+</Warning>
+
+<Check>Filled in `PROXY_WALLET` with the proxy wallet address (not the EOA address)</Check>
+
+<Note>
+  Polymarket uses a proxy wallet contract to hold your positions. Using your EOA address here instead of the proxy address will cause authentication failures. Double-check the address by comparing it with what is shown in your Polymarket account settings.
+</Note>
+
+<Check>Set `POLYGON_RPC` to a private RPC endpoint from Alchemy or Infura</Check>
+
+<Note>
+  The default public Polygon RPC (`https://polygon-rpc.com`) is rate-limited and unreliable under sustained load. A free tier account from [Alchemy](https://www.alchemy.com) or [Infura](https://www.infura.io) takes about two minutes to set up and provides a dedicated endpoint.
+</Note>
+
+<Check>Set `MAX_SPEND_PER_MARKET` to a small value, such as `5`</Check>
+
+<Note>
+  This caps the total USDC the bot will deploy per individual 5-minute market. Starting at $5 keeps your maximum exposure per market cycle very low while you verify everything is working.
+</Note>
+
+<Check>Set `MAX_LOSS_PER_HOUR_USDC` to a number you are comfortable losing in a single hour</Check>
+
+<Note>
+  This is a hard circuit breaker. Once cumulative realized losses in a rolling hour window reach this value, the bot halts. Set it to a small number (e.g. `20`) for your first session.
+</Note>
+
+## Copy trader (if using copy mode)
+
+<Check>Set `COPY_DRY_RUN=true` for the first run</Check>
+
+<Tip>
+  Dry-run mode logs every detected trade and the sizing decision the bot would make, without sending any actual orders. Review the output to confirm the bot is detecting the correct wallet and sizing trades as expected before switching to live mode.
+</Tip>
+
+<Check>Set `COPY_TARGETS` to the proxy wallet address(es) you want to mirror, all lowercase</Check>
+
+<Note>
+  `COPY_TARGETS` accepts a comma-separated list of Polymarket proxy wallet addresses. All addresses must be lowercase and include the `0x` prefix. Example: `COPY_TARGETS=0xcfb103c37c0234f524c632d964ed31f117b5f694`
+</Note>
+
+<Check>Set `COPY_FIXED_USDC` or the appropriate sizing parameter for your chosen `COPY_SIZE_MODE`</Check>
+
+<Note>
+  The default sizing mode is `FIXED`, which spends exactly `COPY_FIXED_USDC` per copied trade regardless of the target's order size. Start with a small value like `5`. If you use `MIRROR` or `RATIO` mode, verify the implied spend against `COPY_MAX_USDC_PER_TRADE` to avoid unexpectedly large orders.
+</Note>
+
+<Check>Confirmed `COPY_DRY_RUN=false` only after reviewing dry-run logs and verifying correct behavior</Check>
+
+<Warning>
+  Only disable dry-run mode after you have seen the bot correctly identify the target wallet's trades in the logs and confirmed the sizing output matches your expectations. Switching to live mode is a one-line change — take the time to verify first.
+</Warning>
+
+## After your first session
+
+Once you have run the bot for a short session, do the following before scaling up:
+
+1. **Review `bot.log`** — open the log file in the project directory and check for any `error` or `warn` entries. Authentication errors, RPC failures, and order rejections all appear here.
+2. **Check the terminal PnL summary** — the bot prints a session summary when it exits. Verify that realized PnL and trade counts look reasonable.
+3. **Compare on-chain activity** — check your proxy wallet on [Polygonscan](https://polygonscan.com) to confirm that the transactions the bot reports match what appears on chain.
+4. **Only scale up after confirming correct operation** — increase `MAX_SPEND_PER_MARKET`, `COPY_FIXED_USDC`, or other sizing parameters only once you have completed at least one full session without errors.
+
+<Warning>
+  Leave `POLY_API_KEY`, `POLY_API_SECRET`, and `POLY_API_PASSPHRASE` **blank** on your first run. The bot derives these credentials automatically from your wallet signature and writes them to your `.env` file. If you paste incorrect values here, authentication will fail.
+</Warning>

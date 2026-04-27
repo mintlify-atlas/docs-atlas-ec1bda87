@@ -1,0 +1,113 @@
+---
+title: "Troubleshooting the Polymarket Copy Trading Bot"
+description: "Step-by-step fixes for startup failures, auth errors, copy trades not firing, merge and redeem failures, and other common Polymarket bot issues."
+---
+
+When something goes wrong, start by checking the terminal output for the immediate error message. For deeper investigation, open `bot.log` in the project root — it contains full JSON error details, order IDs, and timestamps for every event the bot recorded. Most issues come down to misconfigured `.env` values, wallet mismatches, or network problems.
+
+<AccordionGroup>
+  <Accordion title="Bot exits immediately with a missing env var error">
+    Your `.env` file is missing one or more required fields. The bot validates its configuration at startup and exits cleanly if anything critical is absent.
+
+    **Steps to fix:**
+
+    1. Open `.env` in a text editor and confirm these fields are filled in and not blank:
+       - `PRIVATE_KEY`
+       - `PROXY_WALLET`
+       - `COPY_TARGETS` (required only when `TRADING_MODE=copy`)
+    2. Make sure you **copied** `.env.example` to `.env` — do not rename the example file. Renaming it leaves you without a template and can cause subtle errors if you ever reset your config.
+
+    ```bash
+    # Mac / Linux
+    cp .env.example .env
+
+    # Windows (PowerShell)
+    Copy-Item .env.example .env
+    ```
+  </Accordion>
+
+  <Accordion title="Orders fail or bot can't authenticate">
+    Authentication failures usually mean a wallet mismatch or stale API credentials.
+
+    **Steps to fix:**
+
+    1. Confirm `PRIVATE_KEY` is the private key of the wallet you connected to your Polymarket account — not any other wallet.
+    2. Confirm `PROXY_WALLET` is your **Polymarket proxy wallet address**, not your MetaMask EOA address. Find the proxy address in your Polymarket account settings after connecting your wallet.
+    3. Leave `POLY_API_KEY`, `POLY_API_SECRET`, and `POLY_API_PASSPHRASE` **blank**. The bot derives these automatically from your wallet on first run. Filling them in manually with incorrect values will cause auth to fail.
+    4. Replace the default public RPC (`https://polygon-rpc.com`) with a private endpoint from [Alchemy](https://alchemy.com) or [Infura](https://infura.io) — the public endpoint is rate-limited and unreliable.
+    5. Check `bot.log` for the full error response, including any HTTP status codes or contract revert reasons.
+  </Accordion>
+
+  <Accordion title="Copy trades are not firing">
+    The copy trader is polling but not executing. Work through the following checks in order.
+
+    **Steps to fix:**
+
+    1. Verify all addresses in `COPY_TARGETS` are **lowercase** (e.g. `0xabc123...`, not `0xABC123...`). The bot compares addresses case-sensitively.
+    2. The target wallet must be placing **new BUY orders**. The bot ignores sell-side fills and any fills it has already seen in the current session.
+    3. Set `COPY_DRY_RUN=false` if you want real orders placed. When `COPY_DRY_RUN=true`, the bot logs what it would do but does not submit anything to the order book.
+    4. Check your spend caps — if `COPY_MAX_USDC_PER_TRADE`, `COPY_MAX_USDC_PER_HOUR`, or `COPY_MAX_USDC_TOTAL` are set to `0` or a value lower than the trade size, the bot will skip every trade silently.
+    5. Search `bot.log` for `"skipping trade"` entries. Each skipped trade includes a `reason` field that explains exactly why it was rejected (stale signal, cap exceeded, price out of range, etc.).
+  </Accordion>
+
+  <Accordion title="Merge or redeem transactions fail">
+    On-chain transaction failures are almost always gas or timing related.
+
+    **Steps to fix:**
+
+    1. Check your MATIC balance. Every merge and redeem requires a small gas fee on Polygon — a few dollars' worth of MATIC is enough for many transactions. Top up your wallet if the balance is low.
+    2. For **redeem failures**: the market must be **fully resolved** before you can claim winnings. Open Polymarket and confirm the market shows a resolution result. If it is still pending, wait and retry.
+    3. Check `bot.log` for the specific contract error message. Common causes include nonce conflicts (restart the bot) and RPC timeouts (switch to a private endpoint).
+  </Accordion>
+
+  <Accordion title='"price gate failed — exiting"'>
+    This message means the bot's built-in safety check did not pass at startup or during the main loop.
+
+    **What is happening:**
+
+    The bot runs a price gate check against the configured RPC endpoint at startup and at the beginning of every loop iteration. If the check returns an unexpected value or times out, the bot exits cleanly rather than trading on bad data. This is intentional — it prevents the bot from acting on stale or corrupt market state.
+
+    **Steps to fix:**
+
+    1. Wait a few minutes and restart the bot with `npm start`. Transient RPC issues resolve on their own most of the time.
+    2. If the error persists, check your network connection and confirm your RPC endpoint is responding.
+    3. Switch to a private RPC endpoint (Alchemy or Infura) if you are using the default public one — the public endpoint can go offline under load.
+  </Accordion>
+
+  <Accordion title="Bot runs but I see no arb trades (only ladder posts)">
+    The arb engine is running, but the market conditions required for a taker buy are not currently met.
+
+    **What is happening:**
+
+    The bot fires a taker buy only when `best_ask_up + best_ask_down < 1 - TARGET_EDGE`. If that condition is never satisfied, you will see ladder posts but no arb fills.
+
+    **Steps to fix:**
+
+    1. Lower `TARGET_EDGE` slightly — for example, try `0.01` instead of `0.02` to capture smaller edges. Be aware that a lower edge means less profit per trade.
+    2. High-liquidity markets have tighter spreads. Arb opportunities are less frequent in well-traded markets; this is expected behavior.
+    3. Verify your RPC endpoint is responsive. A slow endpoint delays price updates and can cause the bot to miss fills that were available for only a few hundred milliseconds.
+  </Accordion>
+
+  <Accordion title="Node.js version error">
+    The bot uses ES modules (`import`/`export`) and requires **Node.js 18 or newer**.
+
+    **Steps to fix:**
+
+    1. Run `node --version` in your terminal to check your current version.
+    2. If the output is lower than `v18.0.0`, download and install the latest LTS release from [nodejs.org](https://nodejs.org).
+    3. Re-run `npm install` after upgrading to ensure native modules are rebuilt for the new version.
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  Open `bot.log` in the project root for full JSON error details after any failed session. It contains order IDs, timestamps, HTTP responses, and contract revert reasons that are not shown in the terminal summary.
+</Note>
+
+<CardGroup cols={2}>
+  <Card title="Environment reference" icon="sliders" href="/configuration/env-reference">
+    Complete reference for every `.env` variable, including defaults and valid values.
+  </Card>
+  <Card title="Logging guide" icon="scroll" href="/reference/logging">
+    Understand the log format and learn how to filter and read `bot.log` entries.
+  </Card>
+</CardGroup>

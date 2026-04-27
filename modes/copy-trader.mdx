@@ -1,0 +1,176 @@
+---
+title: "Copy trading: mirror any Polymarket wallet live"
+description: "Mirror any Polymarket wallet's buy orders in real time using FIXED, MIRROR, or RATIO sizing with multi-layer spend caps and slippage protection."
+---
+
+The copy trader monitors one or more target wallets via the Polymarket activity API and instantly fires IOC buy orders to mirror their trades. Every new buy the target makes triggers a filtered, size-adjusted copy order on your account — with configurable spend caps, slippage protection, and an optional dry-run mode for testing without real orders.
+
+## How it works
+
+<Steps>
+  <Step title="Polling the activity feed">
+    `ActivityFeed` polls `GET /trades?user=<address>` for each target wallet at
+    `COPY_POLL_MS` intervals (default 250ms — roughly 4 requests per second per
+    wallet). Keep-alive HTTP connections minimize handshake overhead. If a
+    previous request for a target is still in flight, the tick is skipped to
+    avoid request pileups.
+  </Step>
+  <Step title="Detecting and normalizing new trades">
+    Responses are deduplicated by `transactionHash + asset`. Trades seen in a
+    previous poll are ignored. On the very first poll for each target, all
+    existing trades are silently marked as seen so you don't chase a backlog of
+    stale signals at startup. Each new trade is normalized into a consistent
+    shape: `tokenId`, `conditionId`, `side`, `price`, `size`, `usdc`,
+    `timestamp`, and `ageMs`.
+  </Step>
+  <Step title="Applying filters">
+    `CopyTrader` runs a fast pre-flight check on every incoming trade event:
+
+    - `side` must be `BUY` — sells are never copied.
+    - Trade age must be ≤ `COPY_STALE_MS` at detection time — stale signals are dropped.
+    - `price` must be within `[COPY_MIN_PRICE, COPY_MAX_PRICE]`.
+    - `conditionId` must not be in the block list.
+    - `conditionId` must be in the allow list (if the allow list is non-empty).
+    - None of the spend caps (`COPY_MAX_USDC_PER_TRADE`, per-market, hourly,
+      total) must already be exhausted.
+  </Step>
+  <Step title="Computing your order size">
+    The raw USDC amount is calculated using the configured `COPY_SIZE_MODE`, then
+    clipped by all four spend caps simultaneously — the smallest cap wins.
+    If the resulting size is below $1 the trade is skipped.
+  </Step>
+  <Step title="Firing the order">
+    An IOC buy order is posted at:
+
+    ```
+    maxPrice = min(COPY_MAX_PRICE, target's fill price + COPY_MAX_SLIPPAGE)
+    shares   = floor(ourUsdc / maxPrice)
+    ```
+
+    The spend is recorded immediately after the order is sent (conservative
+    accounting — assumes a full fill at `maxPrice`) to keep all caps accurate in
+    real time.
+  </Step>
+</Steps>
+
+## Sizing modes
+
+Choose your sizing mode with the `COPY_SIZE_MODE` variable.
+
+<Tabs>
+  <Tab title="FIXED">
+    Always spends exactly `COPY_FIXED_USDC` per copied trade, regardless of how
+    much the target spent. This is the simplest mode and the safest starting
+    point — your exposure per trade is completely predictable.
+
+    ```bash .env
+    COPY_SIZE_MODE=FIXED
+    COPY_FIXED_USDC=10
+    ```
+  </Tab>
+  <Tab title="MIRROR">
+    Spends the same USDC amount the target spent (`price × size`). Your position
+    scales 1:1 with theirs. If the target buys $200 of a token, you also spend
+    $200 (subject to your spend caps).
+
+    ```bash .env
+    COPY_SIZE_MODE=MIRROR
+    ```
+  </Tab>
+  <Tab title="RATIO">
+    Spends `COPY_RATIO × target's USDC`. Use this to follow a larger wallet at a
+    fraction of their size. For example, `COPY_RATIO=0.10` means you spend 10%
+    of whatever the target spent.
+
+    ```bash .env
+    COPY_SIZE_MODE=RATIO
+    COPY_RATIO=0.10
+    ```
+  </Tab>
+</Tabs>
+
+## Spend caps (multi-layer)
+
+All four caps are evaluated on every trade. The final order size is the minimum of the raw computed size and each remaining cap. A cap of `0` effectively disables trading for that dimension.
+
+| Variable | Scope | Description |
+|---|---|---|
+| `COPY_MAX_USDC_PER_TRADE` | Single order | Hard ceiling on any individual copy order. |
+| `COPY_MAX_USDC_PER_MARKET` | Per `conditionId` | Maximum cumulative spend on one prediction market for the session. |
+| `COPY_MAX_USDC_PER_HOUR` | Rolling 60-minute window | Limits spend rate; resets as old trades age out of the window. |
+| `COPY_MAX_USDC_TOTAL` | Session lifetime | Absolute maximum spend since the process started. |
+
+All caps are applied simultaneously on every trade — whichever limit has the least headroom wins.
+
+## Running the copy trader
+
+<CodeGroup>
+
+```bash Standalone
+npm run copy
+# or:
+node src/copy/index.js
+```
+
+```bash Development (auto-restart)
+npm run copy:dev
+```
+
+```bash Alongside arb bot
+# Set TARGET_WALLET in .env to enable the integrated copy watcher,
+# then start the arb bot as normal:
+npm start
+```
+
+</CodeGroup>
+
+When running standalone (`npm run copy`), `TRADING_MODE=copy` is set automatically via `cross-env` and the bot uses the `COPY_TARGETS` variable and the activity-feed polling pipeline described above.
+
+The integrated mode (`npm start` with `TARGET_WALLET` set) runs a different, lighter copy watcher (`src/copy-trader.js`) alongside the arb bot in the same process. It uses position-delta tracking rather than activity-feed polling: it periodically fetches the target's full position list, detects increases in `totalBought`, and mirrors the delta. Key variables for this mode are `TARGET_WALLET`, `COPY_TRADE_BUY_PERCENT` (default 100), and `COPY_TRADE_POLL_MS` (default 2000ms).
+
+## Dry-run mode
+
+Set `COPY_DRY_RUN=true` to run the full copy trader pipeline — polling, filtering, sizing — without placing any real orders. All copy decisions are logged and a `copy` event is emitted with `dryRun: true`.
+
+```bash .env
+COPY_DRY_RUN=true
+```
+
+A dry-run log line looks like this:
+
+```
+copy.CopyTrader: copying BUY { target: "0xcfb1...", tokenId: "...", slug: "btc-up-...",
+  targetPx: 0.47, targetSize: 50, ourUsdc: "10.00", maxPrice: 0.50, shares: 20,
+  latencyMs: 180 }
+```
+
+followed by the `copy` event: `{ ev: {...}, ourUsdc: 10, shares: 20, maxPrice: 0.50, dryRun: true }`.
+
+<Tip>
+  Always run dry first. Review a few minutes of logs to confirm the bot is
+  detecting trades correctly, computing sizes as expected, and respecting your
+  caps — then switch `COPY_DRY_RUN=false` to go live.
+</Tip>
+
+## Allow and block lists
+
+Both lists are comma-separated `0x`-prefixed `conditionId` values. Leave `COPY_ALLOWED_CONDITIONS` empty to copy from any market the target trades.
+
+```bash .env
+# Only copy these specific markets (leave empty to allow all):
+COPY_ALLOWED_CONDITIONS=0xabc123...,0xdef456...
+
+# Never copy these markets, even if on the allow list:
+COPY_BLOCKED_CONDITIONS=0x789abc...
+```
+
+- **`COPY_ALLOWED_CONDITIONS`** — if non-empty, only trades whose `conditionId` appears in this list are copied. All others are silently skipped.
+- **`COPY_BLOCKED_CONDITIONS`** — trades whose `conditionId` appears here are always rejected, regardless of the allow list.
+
+Both lists are evaluated in the pre-flight filter before any sizing or order logic runs.
+
+<Warning>
+  The copy trader only mirrors **BUY** orders. If the target sells or reduces a
+  position, you will not automatically exit. You are responsible for managing
+  your own exit strategy on any copied positions.
+</Warning>

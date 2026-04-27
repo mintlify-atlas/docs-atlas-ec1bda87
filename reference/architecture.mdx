@@ -1,0 +1,77 @@
+---
+title: "Architecture: modules, flows, and dependencies"
+description: "How the Polymarket Copy Trading Bot is structured — entry points, core modules, the arb state machine, copy trader pipeline, and on-chain interactions."
+---
+
+The bot is composed of two independent entry points that can run together or separately: an arbitrage bot (`src/index.js`) that trades BTC Up/Down 5-minute markets, and a standalone copy trader (`src/copy/index.js`) that mirrors another wallet's buys. Both are Node.js ESM modules, use `ethers` v6 for EIP-712 signing and on-chain transactions, and communicate with Polymarket via the CLOB REST API and WebSocket book feed.
+
+## Module map
+
+| File | Role |
+|---|---|
+| `src/index.js` | Main entry point; outer loop, market discovery, spawns `Trader` instances |
+| `src/trader.js` | Per-market arb state machine (`INIT → LIVE → CLOSING → CANCELLED → RESOLVING → DONE`) |
+| `src/market.js` | Finds and tracks Polymarket markets via the Gamma API |
+| `src/clob.js` | CLOB API wrapper: limit buys, FOK/IOC orders, cancel, credential management |
+| `src/onchain.js` | Blockchain interactions: approvals, `mergePositions`, `redeemPositions`, token balances |
+| `src/copy-trader.js` | Integrated wallet-mirroring module that runs alongside the arb bot |
+| `src/pnl.js` | Session P&L tracker and hourly loss circuit breaker |
+| `src/logger.js` | Winston logger setup; color-coded console and rotating JSON file transports |
+| `src/config.js` | Centralised env var parsing and validation; exports typed constants |
+| `src/copy/index.js` | Standalone copy trader entry point (runs without the arb bot) |
+| `src/copy/activityFeed.js` | Polls target wallet for new trades |
+| `src/copy/copyTrader.js` | Copy trade execution engine with per-trade, per-market, hourly, and total spend caps |
+| `src/copy/config.js` | Copy trader configuration loader |
+
+## Arb bot flow
+
+The main loop in `src/index.js` follows this sequence on every iteration:
+
+1. **Startup** — `ensureApprovals()` confirms on-chain USDC and CTF approvals are in place, then `ClobClient.init(wallet)` derives fresh CLOB API credentials via EIP-712 signing.
+
+2. **Loop checks** — each iteration calls `checkWeb3PrcPriceGate()` first, then checks whether the rolling hourly loss has exceeded `MAX_LOSS_PER_HOUR_USDC`. Either failure halts the session.
+
+3. **Market discovery** — `fetchMarketWithRetry()` polls the Gamma API for the next `btc-updown-5m` slug approximately 30 seconds before the window opens.
+
+4. **Spawn Trader** — a new `Trader` instance is created and its `run()` promise is added to a `runningTasks` set. The promise is **not awaited** here, so the outer loop can immediately advance to the next 5-minute window.
+
+5. **Trader lifecycle** — inside `run()`, the state machine progresses through:
+   - `INIT` — waits until the window opens (+1 s buffer)
+   - `LIVE` — posts the limit ladder, then runs the arb + merge loop until 15 s before close
+   - `CLOSING` — buys stopped, awaiting cancel
+   - `CANCELLED` — all open orders cancelled via `cancelMarket()` or `cancelAll()`
+   - `RESOLVING` — waits `REDEEM_DELAY_AFTER_CLOSE` seconds, polls for oracle resolution
+   - `DONE` — calls `redeemPositions()` on-chain and logs final P&L
+
+6. **Concurrent execution** — when market N's `Trader` enters `RESOLVING` (which takes ~5+ minutes), market N+1's `Trader` has already started `LIVE` in a separate async task. Both run concurrently.
+
+## Copy trader flow
+
+The copy trader pipeline (in `src/copy/`) processes signals from a watched wallet:
+
+1. `ActivityFeed` polls the target wallet's on-chain activity every `COPY_POLL_MS` milliseconds and emits `trade` events for any new buys it detects.
+
+2. Each event is passed to `CopyTrader.onTrade()`.
+
+3. A series of O(1) pre-flight filters run with no I/O:
+   - **Staleness** — events older than `COPY_STALE_MS` are dropped
+   - **Price band** — prices outside `[COPY_MIN_PRICE, COPY_MAX_PRICE]` are rejected
+   - **Allow/block lists** — `COPY_ALLOWED_CONDITIONS` and `COPY_BLOCKED_CONDITIONS` are checked
+   - **Spend caps** — per-trade, per-market, hourly, and total caps are all evaluated before any order is placed
+
+4. Our position size is computed according to `COPY_SIZE_MODE` (`FIXED`, `MIRROR`, or `RATIO`), then clamped by every cap that applies.
+
+5. The max price we'll pay is `target.price + COPY_MAX_SLIPPAGE`, capped at `COPY_MAX_PRICE`.
+
+6. A single IOC buy is fired via `ClobClient.postIOCBuy()`. If `COPY_DRY_RUN=true`, the order is logged but not sent.
+
+## Key dependencies
+
+| Package | Purpose |
+|---|---|
+| `@polymarket/clob-client` | Official CLOB API client for order management |
+| `ethers` v6 | EIP-712 signing and on-chain transaction submission |
+| `ws` | WebSocket connection to the CLOB book feed |
+| `axios` | HTTP calls to Gamma and Data APIs |
+| `winston` | Structured logging with console and file transports |
+| `dotenv` | Loads `.env` into `process.env` at startup |

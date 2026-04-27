@@ -1,81 +1,110 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
-icon: 'rocket'
+title: "Quickstart: install and run the trading bot"
+description: "Install the Polymarket Copy Trading Bot and run your first arb or copy-trading session in under 10 minutes — from cloning to first live or dry-run trade."
 ---
 
-## Get started in three steps
+This guide walks you through installing the bot, creating your `.env` configuration, and launching either the arb bot or the copy trader for the first time. By the end you will have a running bot connected to your Polymarket wallet on Polygon.
 
-Get your documentation site running locally and make your first customization.
+<Steps>
+  <Step title="Prerequisites">
+    Before you begin, make sure you have the following:
 
-### Step 1: Set up your local environment
+    - **Node.js 18 or higher** — check with `node --version`
+    - **A Polymarket account** — sign up at [polymarket.com](https://polymarket.com) and connect a Polygon wallet
+    - **A dedicated Polygon wallet** — use a wallet that holds only trading funds, not your main wallet
+    - **USDC on Polygon** — the bot buys and sells USDC-denominated shares; a starting balance of $10–$20 is enough for testing
+    - **A small amount of MATIC** — required for gas fees on Polygon; $1–$2 worth is sufficient
+    - **A private RPC endpoint** — the default public endpoint is rate-limited; a free tier from [Alchemy](https://www.alchemy.com) or [Infura](https://www.infura.io) is strongly recommended
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    <Note>
+      Your **proxy wallet address** is different from your EOA address. After connecting your wallet on polymarket.com, find the proxy address in your account settings. You will need it in step 5.
+    </Note>
+  </Step>
 
-### Step 2: Deploy your changes
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/Parallax-Trading/polymarket-copy-trading-bot.git && cd polymarket-copy-trading-bot
+    ```
+  </Step>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+  <Step title="Install dependencies">
+    ```bash
+    npm install
+    ```
+  </Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Step title="Create your .env file">
+    Copy the example environment file to create your own configuration:
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    <CodeGroup>
 
-### Step 3: Go live
+    ```bash Mac / Linux
+    cp .env.example .env
+    ```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ```powershell Windows PowerShell
+    Copy-Item .env.example .env
+    ```
 
-## Next steps
+    </CodeGroup>
+  </Step>
 
-Now that you have your docs running, explore these key features:
+  <Step title="Fill in required settings">
+    Open `.env` in your editor and fill in these three required variables:
+
+    ```bash .env
+    # Your Polygon EOA private key (controls the Polymarket proxy wallet).
+    PRIVATE_KEY=0xYOUR_PRIVATE_KEY_HERE
+
+    # The Polymarket proxy wallet address associated with your account.
+    # Retrieve from https://polymarket.com after connecting your wallet.
+    PROXY_WALLET=0xYOUR_PROXY_WALLET_HERE
+
+    # Use a private endpoint (Alchemy / Infura / QuickNode) for reliability.
+    POLYGON_RPC=https://polygon-mainnet.g.alchemy.com/v2/YOUR_KEY_HERE
+    ```
+
+    | Variable | What to put here |
+    |---|---|
+    | `PRIVATE_KEY` | The private key of your **dedicated trading wallet** (not your main wallet). Include the `0x` prefix. |
+    | `PROXY_WALLET` | The proxy wallet address shown in your Polymarket account settings. This is **not** your EOA address. |
+    | `POLYGON_RPC` | Your private RPC URL from Alchemy, Infura, or another provider. The default public endpoint can fail under load. |
+
+    Leave `POLY_API_KEY`, `POLY_API_SECRET`, and `POLY_API_PASSPHRASE` blank — the bot derives and stores these automatically on first run.
+  </Step>
+
+  <Step title="Run the bot">
+    Start the **arb bot** (BTC Up/Down arbitrage):
+
+    ```bash
+    npm start
+    ```
+
+    Or start the **copy trader** (mirrors target wallets):
+
+    ```bash
+    npm run copy
+    ```
+
+    The bot logs progress to the terminal and writes a persistent log to `bot.log` in the project directory.
+  </Step>
+</Steps>
+
+<Tip>
+  Run the copy trader in dry-run mode for your first session. Set `COPY_DRY_RUN=true` in your `.env` file to log all detected trades and sizing decisions without sending any actual orders. Verify the output looks correct before switching to live trading.
+</Tip>
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Full env reference" icon="sliders" href="/configuration/env-reference">
+    Every `.env` variable explained, including risk controls and sizing parameters.
+  </Card>
+  <Card title="Arb bot" icon="arrows-left-right" href="/modes/arb-bot">
+    How the BTC Up/Down arbitrage strategy works and how to tune it.
+  </Card>
+  <Card title="Copy trader" icon="copy" href="/modes/copy-trader">
+    Mirror any Polymarket wallet's buy orders with flexible sizing modes.
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/troubleshooting">
+    Solutions to common startup, authentication, and order-execution errors.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

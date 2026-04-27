@@ -1,0 +1,64 @@
+---
+title: "The 9 trading rules of the Polymarket arb bot"
+description: "The 9 rules governing the Polymarket BTC Up/Down arb bot — ladder posting, taker arb fills, position merges, window cancellation, and oracle redemption."
+---
+
+The arb bot implements 9 rules reverse-engineered from a top-performing Polymarket wallet. Each rule governs a specific phase or decision in the market lifecycle — from which markets to enter, to how positions are unwound after resolution. Rules are applied in a fixed order and the bot never overrides them.
+
+<AccordionGroup>
+  <Accordion title="Rule 0: Universe filter">
+    The bot only trades `btc-updown-5m` markets on Polymarket. All other markets are ignored, regardless of their pricing or liquidity. Market slugs are matched by a fixed naming convention (`btc-updown-5m-<timestamp>`), and the Gamma API is polled to confirm the market exists before a `Trader` is spawned.
+  </Accordion>
+
+  <Accordion title="Rule 1: Timing">
+    The bot enters at the start of each 5-minute window, waiting with a 1-second buffer after the window opens to allow for market creation lag. Once inside the window, the arb loop runs continuously until **15 seconds before close** (`STOP_BUYING_BEFORE_CLOSE=15`). No new buy orders are placed after that point — only cancellation and merge operations continue.
+  </Accordion>
+
+  <Accordion title="Rule 2: Dual-sided limit ladder">
+    At window open, the bot posts limit buy orders on **both** the Up token and the Down token at every price level defined in `LADDER_LEVELS`. The default ladder spans 23 levels from 0.02 to 0.98. Each order is sized at `LADDER_SIZE_PER_LEVEL_USDC / price` shares. All orders across both sides are fired concurrently via `Promise.allSettled`, so the full ladder is posted as quickly as the REST API allows. Individual order failures are logged but do not block the rest of the ladder.
+  </Accordion>
+
+  <Accordion title="Rule 3: Taker arb">
+    During the arb loop, the bot monitors the best ask on both sides via the WebSocket book feed. Whenever `upAsk + downAsk < (1 - TARGET_EDGE)`, an arbitrage opportunity exists — buying both sides costs less than $1 while the combined payout is always $1 at resolution.
+
+    When the condition is met, the bot fires FOK (Fill-Or-Kill) buy orders on both legs simultaneously via `Promise.allSettled`. FOK means each individual order must fill completely or be cancelled — it does not guarantee both legs fill atomically. If one leg fills and the other is rejected, a directional position is created. The bot detects this case, logs it as a partial-arb failure, and re-syncs balances, but the exposure remains until resolution.
+
+    The fill size is the minimum of:
+    - `upAsk.size` (available liquidity on the Up side)
+    - `downAsk.size` (available liquidity on the Down side)
+    - `MAX_TAKER_FILL_USDC / combined` (single-fill USDC cap)
+    - `remainingBudget / combined` (remaining per-market budget)
+  </Accordion>
+
+  <Accordion title="Rule 4: Merge matched pairs">
+    When `min(balanceUp, balanceDown) >= MERGE_THRESHOLD_USDC`, the bot calls `mergePositions(conditionId)` on-chain to convert matched Up+Down token pairs back into USDC. This captures the arb profit immediately rather than waiting for resolution.
+
+    Merging is also forced at window close regardless of the threshold, converting any remaining matched pairs before the cancellation phase. A `_merging` flag prevents concurrent merge calls from conflicting.
+  </Accordion>
+
+  <Accordion title="Rule 5: No sells">
+    The bot never posts a sell order. All exits happen through merging (for matched pairs) or redemption (for the winning side after resolution). This rule is enforced structurally — there is no code path that calls a sell API in the arb bot.
+  </Accordion>
+
+  <Accordion title="Rule 6: Cancel at window close">
+    At `t=300s` (window close), the bot cancels all remaining open orders by calling `ClobClient.cancelMarket(conditionId)`. If that call fails, it falls back to `ClobClient.cancelAll()`. The cancellation clears the `openOrders` map and stops the WebSocket book feed.
+  </Accordion>
+
+  <Accordion title="Rule 7: Redeem at resolution">
+    After window close, the bot waits `REDEEM_DELAY_AFTER_CLOSE` seconds (default 320 s) before polling the Gamma API for oracle resolution. Once the market shows as resolved, it calls `redeemPositions(conditionId)` on-chain to burn the winning-side tokens and receive the USDC payout. If the resolution poll times out, the bot attempts redemption anyway. Redemption is skipped if no tokens are held.
+  </Accordion>
+
+  <Accordion title="Rule 8: Three circuit breakers">
+    Three independent safety mechanisms can halt or throttle trading mid-market:
+
+    **a) Inventory imbalance** — if `|balanceUp - balanceDown| > MAX_INVENTORY_IMBALANCE_USDC` (default 200), buying on the over-held side is suppressed. If the imbalance exceeds **2×** the limit, trading halts entirely (`halted = true`).
+
+    **b) Combined-ask stop** — if the best combined ask (`upAsk + downAsk`) exceeds `COMBINED_ASK_STOP` (default 1.02), the combined-ask circuit breaker fires, orders are pulled, and the arb loop exits.
+
+    **c) Hourly loss limit** — checked at the start of each main loop iteration. If the rolling 1-hour realized loss tracked by `PnlTracker.rollingHourlyLoss()` exceeds `MAX_LOSS_PER_HOUR_USDC` (default 300), the entire session ends.
+  </Accordion>
+
+  <Accordion title="Rule 9: Per-market capital cap">
+    The bot never spends more than `MAX_SPEND_PER_MARKET` USDC (default 400) in a single 5-minute window. This cap is checked before every limit order and every taker arb. Once `totalSpent >= MAX_SPEND_PER_MARKET`, the `halted` flag is set and no further orders are placed for that market.
+  </Accordion>
+</AccordionGroup>

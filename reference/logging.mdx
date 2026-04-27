@@ -1,0 +1,119 @@
+---
+title: "Logging, monitoring, and reading P&L summaries"
+description: "How the Polymarket Copy Trading Bot logs to console and bot.log — log levels, key events to watch, and how to interpret session P&L summary fields."
+---
+
+The bot uses Winston for structured dual-output logging. The terminal shows color-coded, human-readable output suitable for live monitoring. The `bot.log` file captures the same events in full JSON format — including order IDs, transaction hashes, error stack traces, and timing metadata — for post-session review.
+
+## Log outputs
+
+**Console (terminal)**
+
+Color-coded by log level, formatted as:
+
+```
+HH:mm:ss.SSS level [market-slug]: message {"key": "value"}
+```
+
+The `[market-slug]` field is added automatically by child loggers created for each market window. Use this output to watch trading activity in real time.
+
+**`bot.log` file**
+
+Full JSON objects written to `bot.log` in the directory where you run the bot. Rotates at 10 MB, keeping up to 5 files. Use this file to:
+- Reconstruct the exact sequence of orders placed in a session
+- Investigate fills, merges, and redemptions after the fact
+- Debug failures — errors include full `err.message` and stack traces
+
+## Log levels
+
+Set `LOG_LEVEL` in your `.env` to control verbosity. The default is `info`.
+
+| Level | When it appears |
+|---|---|
+| `info` | Normal operations: market found, order placed, merge complete, session summary printed |
+| `warn` | Recoverable issues: one arb leg partially failed, balance sync failed, cancelMarket fell back to cancelAll |
+| `error` | Serious problems: fatal auth failure, price gate check failed, circuit breaker triggered, arb leg both sides failed |
+| `debug` | Verbose internal state: balance sync values, wait durations, skipped copy trades with rejection reason |
+
+To enable verbose output:
+
+```bash
+LOG_LEVEL=debug node src/index.js
+```
+
+## Key log events to watch
+
+<AccordionGroup>
+  <Accordion title='"Bot startup complete"'>
+    Logged by `src/index.js` after `ensureApprovals()` and `ClobClient.init()` both succeed. If you don't see this within the first few seconds, check your `PRIVATE_KEY`, `PROXY_WALLET`, and `POLYGON_RPC` values.
+  </Accordion>
+
+  <Accordion title='"Trader: RULE-3 arb triggered"'>
+    An arbitrage opportunity was found and FOK orders were fired on both sides. The log includes:
+    - `upPrice` / `downPrice` — the best ask on each side
+    - `combined` — their sum (should be below `1 - TARGET_EDGE`)
+    - `edge` — the profit margin (`1 - combined`)
+    - `shares` — how many shares were bought on each side
+
+    If you see this frequently with large `edge` values, the market is pricing inefficiently.
+  </Accordion>
+
+  <Accordion title='"Trader: RULE-4 merging pairs"'>
+    The bot has accumulated enough matched Up+Down token pairs to trigger a merge. The log shows the number of pairs being merged. After a successful merge, `mergedUsdc` increases and both token balances decrease by the same amount. Merging is also forced at window close.
+  </Accordion>
+
+  <Accordion title='"CIRCUIT BREAKER"'>
+    One of the three circuit breakers fired. The log message identifies which one:
+    - `RULE-8 inventory imbalance circuit breaker` — Up/Down balances have diverged too far
+    - `RULE-8 combined ask stop triggered` — the market is overpriced
+    - `CIRCUIT BREAKER: rolling hourly loss exceeded limit` — session-level loss limit hit
+
+    After a session-level breaker, the bot shuts down. After a per-market breaker, only that market's `Trader` halts; the outer loop continues to the next window.
+  </Accordion>
+
+  <Accordion title='"PnL SESSION SUMMARY"'>
+    Printed after each market completes and again at session end. Fields:
+
+    | Field | Description |
+    |---|---|
+    | `markets` | Number of markets traded this session |
+    | `sessionSpent` | Total USDC spent on all buy orders |
+    | `sessionMerged` | USDC recovered by merging matched pairs |
+    | `sessionRedeemed` | Estimated USDC from winning token redemptions |
+    | `sessionPnl` | `(sessionMerged + sessionRedeemed) - sessionSpent` |
+
+    Each market is also listed individually with its own `spent`, `merged`, `redeemed`, and `pnl`.
+  </Accordion>
+
+  <Accordion title='"copy.CopyTrader: copying BUY"'>
+    A copy trade is about to be placed. The log includes:
+    - `target` — the wallet being copied
+    - `tokenId` — the outcome token being bought
+    - `targetPx` / `targetSize` — the original trade's price and size
+    - `ourUsdc` — how much USDC we are spending
+    - `maxPrice` — the highest price we will accept (`target.price + COPY_MAX_SLIPPAGE`)
+    - `shares` — number of shares to request
+    - `latencyMs` — time between the target's on-chain transaction and our order being fired
+
+    This log appears before the order is sent. The subsequent `"copy.CopyTrader: order sent"` log confirms the API call completed.
+  </Accordion>
+
+  <Accordion title='"price gate failed"'>
+    The `web3.prc` price check returned a `responsive` value below the threshold (0.983), or the value was missing entirely. The bot will not start or will shut down mid-session. This is a safety gate external to the trading logic. Check your network connectivity and the `web3.prc` package status if you see this unexpectedly.
+  </Accordion>
+</AccordionGroup>
+
+## P&L session summary
+
+`PnlTracker.printSessionSummary()` in `src/pnl.js` logs a summary after each market and at the end of the session. Here is what each field means:
+
+| Field | What it represents |
+|---|---|
+| `sessionSpent` | Total USDC debited from your wallet for buy orders this session |
+| `sessionMerged` | USDC returned to your wallet by merging matched Up+Down pairs on-chain |
+| `sessionRedeemed` | Estimated USDC from redeeming winning tokens (one side pays $1 per share) |
+| `sessionPnl` | `(sessionMerged + sessionRedeemed) − sessionSpent` |
+
+<Note>
+  `sessionPnl` is an estimate. The `sessionRedeemed` value is calculated as `max(balanceUp, balanceDown)` at the time of redemption — it assumes the larger side wins. Actual payout depends on which outcome the oracle resolves, which is only known after the market settles on-chain.
+</Note>
